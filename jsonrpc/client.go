@@ -3,6 +3,7 @@ package jsonrpc
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"sync/atomic"
@@ -36,15 +37,16 @@ type msgWrapper struct {
 }
 
 func NewClient(conn net.Conn) *Client {
-	stdenc := json.NewEncoder(os.Stdin)
-	stdenc.SetIndent("", "\t")
+	e := json.NewEncoder(conn)
+	e.SetIndent("", "\t")
 
 	return &Client{
 		conn: conn,
 
-		idCounter: uint32(0),
+		// Get lower 5 digits of the current process ID as the prefix of the request ID
+		idCounter: uint32((os.Getpid() % (1 << 6)) * 10000),
 
-		encoder: json.NewEncoder(conn),
+		encoder: e,
 		decoder: json.NewDecoder(bufio.NewReader(conn)),
 
 		msgs:          make(chan *msgWrapper, 1024),
@@ -55,24 +57,41 @@ func NewClient(conn net.Conn) *Client {
 
 func (c *Client) SendMsgWithTimeout(method string, params interface{}, timeoutInSec int) (res interface{}, err error) {
 	id := atomic.AddUint32(&c.idCounter, 1)
+	req := NewRequest(id, method, params)
+	var resp Response
 
 	defer func() {
-		err = errors.Wrapf(err, "error encoding message, id %v, method %v, parameters %+v during sending", id, method, params)
+		// TODO: Don't know why https://go.dev/play/p/bZ860T6CtcU
+		if resp.ErrorInfo == nil {
+			err = nil
+		}
+		err = errors.Wrapf(err, "error sending message, id %v, method %v, params %+v", id, method, params)
+
+		// For debug purpose
+		stdenc := json.NewEncoder(os.Stdin)
+		stdenc.SetIndent("", "\t")
+		stdenc.Encode(req)
+		stdenc.Encode(&resp)
 	}()
 
-	if err = c.encoder.Encode(NewMsg(id, method, params)); err != nil {
+	if err = c.encoder.Encode(req); err != nil {
 		return nil, err
 	}
 
-	var obj map[string]interface{}
 	for count := 0; count <= timeoutInSec; count++ {
 		if c.decoder.More() {
 			break
 		}
 		time.Sleep(1 * time.Second)
 	}
+	if err = c.decoder.Decode(&resp); err != nil {
+		return nil, err
+	}
+	if resp.Id != id {
+		return nil, fmt.Errorf("received response but the id mismatching, request id %d, response id %d", id, resp.Id)
+	}
 
-	return obj, c.decoder.Decode(&obj)
+	return resp.Result, resp.ErrorInfo
 }
 
 func (c *Client) SendMsg(method string, params interface{}) (interface{}, error) {
@@ -101,10 +120,10 @@ func (c *Client) SendMsgAsync(method string, params interface{}, responseChan ch
 func (c *Client) handleSend(msg *msgWrapper) {
 	id := atomic.AddUint32(&c.idCounter, 1)
 
-	m := NewMsg(id, msg.method, msg.params)
+	req := NewRequest(id, msg.method, msg.params)
 	c.responseChans[id] = msg.response
 
-	if err := c.encoder.Encode(m); err != nil {
+	if err := c.encoder.Encode(req); err != nil {
 		logrus.Errorf("error encoding during handleSend: %v", err)
 	}
 }
