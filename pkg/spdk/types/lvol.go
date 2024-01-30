@@ -113,6 +113,11 @@ type BdevLvolDecoupleParentRequest struct {
 	Name string `json:"name"`
 }
 
+type BdevLvolSetParentRequest struct {
+	LvolName     string `json:"lvol_name"`
+	SnapshotName string `json:"snapshot_name"`
+}
+
 type BdevLvolResizeRequest struct {
 	Name string `json:"name"`
 	Size uint64 `json:"size"`

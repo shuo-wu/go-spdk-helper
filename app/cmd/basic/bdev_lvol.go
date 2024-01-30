@@ -342,6 +342,44 @@ func bdevLvolDecoupleParent(c *cli.Context) error {
 	return util.PrintObject(decoupled)
 }
 
+func BdevLvolSetParentCmd() cli.Command {
+	return cli.Command{
+		Name: "set-parent",
+		Flags: []cli.Flag{
+			cli.StringFlag{
+				Name:     "lvol",
+				Usage:    "Alias or UUID for the lvol to set parent of. The alias of a lvol is <LVSTORE NAME>/<LVOL NAME>.",
+				Required: true,
+			},
+			cli.StringFlag{
+				Name:     "snapshot",
+				Usage:    "Alias or UUID for the snapshot lvol to become the parent",
+				Required: true,
+			},
+		},
+		Usage: "set a snapshot as the parent of a lvol: \"set-parent --lvol <LVSTORE NAME>/<CLONE LVOL NAME>\" --snapshot <LVSTORE NAME>/<PARENT SNAPSHOT LVOL NAME>\"",
+		Action: func(c *cli.Context) {
+			if err := bdevLvolSetParent(c); err != nil {
+				logrus.WithError(err).Fatalf("Failed to run set parent bdev lvol command")
+			}
+		},
+	}
+}
+
+func bdevLvolSetParent(c *cli.Context) error {
+	spdkCli, err := client.NewClient(context.Background())
+	if err != nil {
+		return err
+	}
+
+	set, err := spdkCli.BdevLvolSetParent(c.String("lvol"), c.String("snapshot"))
+	if err != nil {
+		return err
+	}
+
+	return util.PrintObject(set)
+}
+
 func BdevLvolResizeCmd() cli.Command {
 	return cli.Command{
 		Name: "resize",
