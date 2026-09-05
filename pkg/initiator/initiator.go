@@ -547,12 +547,16 @@ func (i *Initiator) StartNvmeTCPInitiator(transportAddress, transportServiceID s
 		if dmDeviceIsBusy {
 			// Endpoint is already created, just replace the target device
 			i.logger.Info("Linear dm device is busy, trying the best to replace the target device for NVMe/TCP initiator")
+			// This failure cannot be tolerated. A failed replacement means the dm table
+			// still points at the old target, and neither reloadLinearDmDevice nor
+			// resumeLinearDmDevice has run, so i.dev.Export is still zero. Continuing
+			// would make createEndpoint below recreate an endpoint with major:minor 0:0,
+			// while the caller is told the initiator started successfully.
 			if err := i.replaceDmDeviceTarget(); err != nil {
-				i.logger.WithError(err).Warnf("Failed to replace the target device for NVMe/TCP initiator")
-			} else {
-				i.logger.Info("Successfully replaced the target device for NVMe/TCP initiator")
-				dmDeviceIsBusy = false
+				return dmDeviceIsBusy, errors.Wrapf(err, "failed to replace the target device for NVMe/TCP initiator %s", i.Name)
 			}
+			i.logger.Info("Successfully replaced the target device for NVMe/TCP initiator")
+			dmDeviceIsBusy = false
 		} else {
 			i.logger.Info("Creating linear dm device for NVMe/TCP initiator")
 			if err := i.createLinearDmDevice(); err != nil {
@@ -732,12 +736,14 @@ func (i *Initiator) StartUblkInitiator(spdkClient *client.Client, dmDeviceAndEnd
 		if dmDeviceIsBusy {
 			// Endpoint is already created, just replace the target device
 			i.logger.Info("Linear dm device is busy, trying the best to replace the target device for ublk initiator")
+			// See the equivalent path in StartNvmeTCPInitiator: a failed replacement
+			// leaves i.dev.Export zero, which would make the endpoint be recreated with
+			// major:minor 0:0 while the caller is told the start succeeded.
 			if err := i.replaceDmDeviceTarget(); err != nil {
-				i.logger.WithError(err).Warnf("Failed to replace the target device for ublk initiator")
-			} else {
-				i.logger.Info("Successfully replaced the target device for ublk initiator")
-				dmDeviceIsBusy = false
+				return dmDeviceIsBusy, errors.Wrapf(err, "failed to replace the target device for ublk initiator %s", i.Name)
 			}
+			i.logger.Info("Successfully replaced the target device for ublk initiator")
+			dmDeviceIsBusy = false
 		} else {
 			i.logger.Info("Creating linear dm device for ublk initiator")
 			if err := i.createLinearDmDevice(); err != nil {
