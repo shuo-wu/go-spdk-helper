@@ -1220,8 +1220,14 @@ func selectControllerForNVMeDevice(device Device, transportAddress, transportSer
 		}
 	}
 
-	logrus.Warnf("No NVMe controller matched address %s:%s or recorded name %q for subsystem %s, falling back to first controller %s",
-		transportAddress, transportServiceID, recordedControllerName, device.SubsystemNQN, device.Controllers[0].Controller)
+	// Falling back to an arbitrary controller may pick up a stale one
+	if transportAddress != "" && transportServiceID != "" {
+		return Controller{}, fmt.Errorf("no NVMe controller matched address %s:%s or recorded name %q for subsystem %s",
+			transportAddress, transportServiceID, recordedControllerName, device.SubsystemNQN)
+	}
+
+	logrus.Warnf("No NVMe controller matched recorded name %q for subsystem %s, falling back to first controller %s",
+		recordedControllerName, device.SubsystemNQN, device.Controllers[0].Controller)
 	return device.Controllers[0], nil
 }
 
